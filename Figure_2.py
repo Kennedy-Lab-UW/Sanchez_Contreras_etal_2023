@@ -139,8 +139,8 @@ def setup_figure():
     axd2 = middle.subplot_mosaic(mosaic2, gridspec_kw={'wspace':0.016, 'hspace': 0.3})
     axd3 = bottom.subplot_mosaic(mosaic3, gridspec_kw={'wspace':0.08, 'hspace': 0.3})
     top.subplots_adjust(hspace=0.1)
-    axd2ins = inset_axes(axd2['A'], width="32.5%", height="130%",
-                         bbox_to_anchor=[-0.333, 1, 1, 1],
+    axd2ins = inset_axes(axd2['A'], width="33.3%", height="40%",
+                         bbox_to_anchor=[-0.333, -0.3, 1, 1],
                          bbox_transform=axd2['A'].transAxes)
     axd3['A'].set_ylim(-1.5, 3)
     axd3['A'].axhline(0, color='black')
@@ -322,8 +322,10 @@ if __name__ == '__main__':
 
     sns.heatmap(pd.DataFrame([4, 3, 2, 1, 0]), square=True, cbar=False,
                 cmap='rocket_r', vmin=0, vmax=10,
-                yticklabels=['p<0.0001', '0.0001<p<0.001', '0.001<p<0.01', '0.01<p<0.05', 'NS'],
-                xticklabels=[], ax=axd3["G"])
+                yticklabels=['$p_{adj}<0.0001$', '$0.0001<p_{adj}<0.001$', '$0.001<p_{adj}<0.01$', '$0.01<p_{adj}<0.05$', 'NS'],
+                xticklabels=[], linewidths=0.5,
+                linecolor='black', ax=axd3["G"])
+    
     axd3['G'].tick_params(labelsize="large", labelleft=False, labelright=True,
                          left=False, right=True, labelrotation=0)
     axd3['B'].set_yticklabels(["p-value"], rotation=0, fontsize=14)
