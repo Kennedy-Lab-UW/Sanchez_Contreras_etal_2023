@@ -90,7 +90,7 @@ def heatmap_stats(data, cohort, mut_class, output=None):
     return pvals_df
   
     
-def Fig2C_stats(lib_loc):
+def Fig3C_stats(lib_loc):
     
     r_source = robjects.r['source']
     
@@ -103,7 +103,7 @@ def Fig2C_stats(lib_loc):
     #output.close()
 
 
-def Fig3A_B_stats(data, column_name, output):
+def Fig4A_B_stats(data, column_name, output):
     
     clone_percent_pvals = {tissue: 0 for tissue in tissue_type[: -1]}
 
@@ -123,7 +123,7 @@ def Fig3A_B_stats(data, column_name, output):
     return pvalues
 
 
-def Fig5_stats(lib_loc):
+def Fig6_stats(lib_loc):
 
     r_source = robjects.r('source')
     
@@ -136,7 +136,7 @@ def Fig5_stats(lib_loc):
     #output.close()
 
 
-def Supp_Fig_7_stats(clone_freq_df, output):
+def Figure_6_figure_supplement_3_stats(clone_freq_df, output):
     
     pvalue_list = []
 
@@ -200,23 +200,23 @@ if __name__ == "__main__":
     heatmap_stats(summary_data_long, "Young", 'Total_InDel_Freq', "data/stats/Figure_1D_Young_heatmap_stats.csv")
     heatmap_stats(summary_data_long, "Old", 'Total_InDel_Freq', "data/stats/Figure_1D_Old_heatmap_stats.csv")
     
-    # Figure 2A-B statistics
+    # Figure 3A-B statistics
     for age in ['Young', 'Old']:
 
         for i, mut_class in enumerate(mut_type):
 
-            heatmap_stats(summary_data_long, age, mut_class, "data/stats/Figure_2_" + 
+            heatmap_stats(summary_data_long, age, mut_class, "data/stats/Figure_3_" + 
                           age + "_" + mut_type_conv[mut_class] + "_heatmap_stats.csv")
 
-    # Figure 2C statistics
-    Fig2C_stats(R_lib_path) # change package location as necessary
+    # Figure 3C statistics
+    Fig3C_stats(R_lib_path) # change package location as necessary
     
-    # Figure 3 statistics
-    Fig3A_B_stats(final_clone_data, "Percent_Clone", "data/stats/Figure_3A_statistics.csv")        
-    Fig3A_B_stats(final_clone_data, "Clone_Freq", "data/stats/Figure_3B_statistics.csv")
+    # Figure 4 statistics
+    Fig4A_B_stats(final_clone_data, "Percent_Clone", "data/stats/Figure_4A_statistics.csv")        
+    Fig4A_B_stats(final_clone_data, "Clone_Freq", "data/stats/Figure_4B_statistics.csv")
     
-    #Figure 5 statistics
-    Fig5_stats(R_lib_path)
+    #Figure 6 statistics
+    Fig6_stats(R_lib_path)
     
-    #Supplemental Figure 8 statistics
-    Supp_Fig_7_stats(final_clone_data, "data/stats/Supplemental_Figure_7_statistics.csv")
+    #Figure 6-figure_supplement 3 statistics
+    Figure_6_figure_supplement_3_stats(final_clone_data, "data/stats/Figure_6_figure_supplement_3_statistics.csv")

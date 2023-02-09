@@ -1,101 +1,170 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul  5 09:20:55 2022
+Created on Tue Jul  5 08:28:07 2022
 
 @author: scottrk
 """
-import os
+import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib.patches as Patch
-from matplotlib import rcParams
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import seaborn as sns
+from dna_features_viewer import BiopythonTranslator
+import numpy as np
 import pandas as pd
-import itertools
-from GlobalVars_ import color_cycle, tissue_type, tissue_type_long, tissue_type_abbrev, \
-                        mut_type_pretty
+from operator import itemgetter
+import os
+from GlobalVars_ import tissue_type, tissue_type_long, tissue_type_abbrev, color_cycle
 from compile_data import mut_file_import, calc_clone_numbers
 
 
+class MyCustomTranslator(BiopythonTranslator):
+
+    def compute_feature_color(self, feature):
+
+        if feature.type == "gene":
+            return "purple"
+        elif feature.type == "tRNA":
+            return "blue"
+        elif feature.type == "rRNA":
+            return "orange"
+        else:
+            return "green"
+
+    def compute_feature_label(self, feature):
+
+        if feature.type is not None:
+            return None
+        # elif feature.type == "CDS":
+        #    return "CDS here"
+        else:
+            return BiopythonTranslator.compute_feature_label(self, feature)
+
+    def compute_filtered_features(self, features):
+        """Do not display promoters. Just because."""
+        return [
+            feature for feature in features
+            if feature.type is not None
+        ]
+
+
 def setup_figure():
-    rcParams['axes.formatter.limits'] = (-6, 6)
-    fig, ax = plt.subplots(ncols=2, figsize=(25, 8))
+    mosaic = """AABB
+                CCDD
+                EEFF
+                GGHH
+                IIJJ"""
 
-    ax[0].axhline(0.0005, color='black', ls='--', lw=2, alpha=1)
-    ax[1].axhline(0.0005, color='black', ls='--', lw=2, alpha=1)
+    fig = plt.figure(figsize=(12, 14), constrained_layout=True, facecolor='white')
+    axd = fig.subplot_mosaic(mosaic)
 
-    ax1ins = inset_axes(ax[1], width="60%", height="60%",
-                        bbox_to_anchor=[-0.05, -0.05, 1, 1],
-                        bbox_transform=ax[1].transAxes)
+    fig.supylabel('Variant Allele Fraction (Log$_2$ Scaling)', y=0.35, size=20)
+    fig.supxlabel('Genome Position', size=20, x=0.55)
+    axdins = inset_axes(axd['A'],
+                        width="32.5%",
+                        height="100%",
+                        bbox_to_anchor=[-0.095, .5, 1.1, .5],
+                        bbox_transform=axd['A'].transAxes)
 
-    ax1ins.set_ylim(0, 0.0005)
+    return fig, axd, axdins
 
-    return fig, ax, ax1ins
 
-def spectrum(data, mut_type, ax, fill=False, ymin=None, ymax=None, legend=True):
+def plot_clone_numbers(x, y, hue, data, order, ax, ylim, xticklabels, xlabel, ylabel, fc, ec, legend=True):
+    sns.barplot(x=x, y=y, hue=hue, data=data, order=order, ci='sd',
+                       lw=1.2, errwidth=1.5, capsize=0.1, errcolor='black',
+                       ax=ax)
     
-    sns.barplot(x='Class', y='Frequency', hue='Tissue', data=data,
-                       order=mut_type, ci='sd',
-                       edgecolor='black', lw=1.5, errwidth=1.7,
-                       capsize=0.07, errcolor='black', ax=ax)
-
-    sns.stripplot(x="Class", y="Frequency", hue="Tissue", data=data,
-                  order=mut_type, ax=ax, alpha=0.7, dodge=True, color='black')
-
+    sns.despine(ax=ax)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
+    ax.set_xticklabels(xticklabels, rotation=45, fontsize=14)
+    ax.tick_params('y', labelsize=14)
+    ax.set_xlabel(xlabel, fontsize=16)
+    plt.setp(ax.get_yaxis().get_offset_text(), visible=False)
+    ax.set_ylabel(ylabel, fontsize=16)
 
-    if ymin is not None and ymax is not None:
-        ax.set_ylim(ymin, ymax)
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
     
-    patch_list = []
-    
-    if not fill:
-        for i, _ in enumerate(ax.patches):
-
-            j = i // 6
-            ax.patches[i].set_facecolor(color_cycle[j])
-            r, g, b, a = ax.patches[i].get_facecolor()
-            ax.patches[i].set_facecolor((r, g, b, 0.15))  
-            ax.patches[i].set_edgecolor(color_cycle[j])
-            ax.patches[i].set(lw=2.4)
-
-            if i % 6 == 0:
-                patch_list.append([r, g, b, 0.15])
+    for i, _ in enumerate(ax.patches):
+        ax.patches[i].set_facecolor(fc[i])
+        ax.patches[i].set_edgecolor('black')
         
-        if legend:
-            legend = [Patch.Patch(facecolor=patch_list[x], lw=2.4, edgecolor=color_cycle[x],
-                                  label=tissue_type_long[x]) for x in range(8)]
-                
-    
+        if i < len(ax.patches)/2:
+            r, g, b, a = ax.patches[i].get_facecolor()
+            ax.patches[i].set_facecolor((r, g, b, .15))  
+            ax.patches[i].set_edgecolor((r, g, b, 1))
+            ax.patches[i].set(lw=2.4)
+            
+    if legend:
+        new_legend = [Patch.Patch(facecolor='lightgrey', edgecolor='black', label='Young'),
+                      Patch.Patch(facecolor='dimgrey', edgecolor='black', label='Old')]
+        
+        ax.legend(handles=new_legend, fontsize='xx-large', frameon=False, ncol=2, 
+                  bbox_to_anchor=[0.5, 0.73, 0.5, 0.5])
+        
+    elif not legend:
+        ax.legend_.remove()
     else:
+        pass
 
-        for i, _ in enumerate(ax.patches):
 
-            j = i // 6
-            ax.patches[i].set_facecolor(color_cycle[j])
-            ax.patches[i].set_edgecolor('black')
+def clone_plot(df, tissue, flat_file, ax):
+    graphic_record = MyCustomTranslator().translate_record(flat_file)
+    graphic_record.feature_level_height = 0
+    graphic_record.plot(figure_width=1, ax=ax)
+    y = ax.twinx()
 
-            if legend:
-                legend = [Patch.Patch(facecolor=color_cycle[x], edgecolor='black',
-                                      label=tissue_type_long[x]) for x in range(8)]
+    for index, group in enumerate(['Young', 'Old']):
+        data = df.query("Cohort==@group & Tissue==@tissue & \
+                        alt_count>2 & alt!='-' & ref!='-' & VAF<0.01")
 
-    ax.set_xticklabels(mut_type_pretty)
-    ax.set_xlabel('')
-    ax.tick_params(labelsize=18)
-    ax.margins(x=.01)
+        data['VAF'] = np.log2(data['VAF'].mul(10000).astype(float))
 
-    ax.set_ylabel("Clone Frequency", fontsize=25)
-    ax.set_xlabel("")
-    ax.set_xticklabels(mut_type_pretty, rotation=45)
-    ax.tick_params(labelsize=22)
+        if index == 0:
+            bottom = 0.67
 
-    return ax, legend
+        if index == 1:
+            data['VAF'] = data['VAF'].mul(-1)
+            bottom = -0.67
 
-if __name__ == '__main__':
+        markerline, stemlines, baseline = y.stem(data['start'], data['VAF'],
+                                                 linefmt='C' + str(index) + '-',
+                                                 markerfmt='C' + str(index) + 'o',
+                                                 basefmt=" ", label=group,
+                                                 bottom=bottom)
+        stemlines.set_linewidths(1)
+        markerline.set_markersize(3.4)
 
-    mut_type_names = ["G>A/C>T_Freq", "A>G/T>C_Freq", "G>T/C>A_Freq", "G>C/C>G_Freq", "A>T/T>A_Freq", "A>C/T>G_Freq"]
+    for x in [1, 2, 3, 4, 5, 6]:
+        y.axhline(y=-x, c='black', linestyle='--', alpha=0.11, zorder=0)
+        y.axhline(y=x, c='black', linestyle='--', alpha=0.11, zorder=0)
+
+    y.axhline(y=0, c='black')
+
+    y.tick_params(labelsize='x-large')
+    y.spines['bottom'].set_color('black')
+    y.set_yticks([-7, 0, 7])
+
+    if i % 2 == 1:
+        y.set_yticklabels([])
+
+    else:
+        y.set_yticklabels(['0.0128', '0', '0.0128'])
+
+    ax.set_yticks([1, 0, 1])
+    ax.set_ylim(-1, 1)
+    ax.set_xticklabels(['0', '2k', '4k', '6k', '8k', '10k', '12k', '14k', '16k'],
+                       fontsize=16, color='black')
+    y.spines["left"].set_position(("axes", 0))
+    y.yaxis.set_label_position('left')
+    y.yaxis.set_ticks_position('left')
+    y.legend(ncol=2, fontsize='large', loc='upper left')
+
+    return ax
+
+
+if __name__ == "__main__":
 
     if not os.path.isfile("data/imported_data/summary_clone_data.csv"):
         if not os.path.isdir("data/imported_data"):
@@ -108,51 +177,53 @@ if __name__ == '__main__':
         final_clone_data.to_csv("data/imported_data/summary_clone_data.csv")
     else:
         mut_data = pd.read_csv("data/imported_data/mut_file_data.csv",
-                               index_col=[0, 1])
+                               index_col=[0])
         final_clone_data = pd.read_csv("data/imported_data/summary_clone_data.csv")
 
-    clone_data_long = pd.melt(final_clone_data, id_vars=['Mouse_ID', 'Tissue', 'Cohort'],
-                              value_vars=['A>T/T>A_Freq', 'A>C/T>G_Freq', 'A>G/T>C_Freq', 'G>T/C>A_Freq',
-                                          'G>A/C>T_Freq', 'G>C/C>G_Freq'])
-    clone_data_long.columns = ["MouseID", "Tissue", 'Cohort', 'Class', 'Frequency']
-
-    fig, ax, ax1ins = setup_figure()
-
-    plot_A, legend0 = spectrum(data=clone_data_long.query("Cohort=='Young'"), 
-                               mut_type=mut_type_names, ax=ax[0], fill=False)
-
-    plot_B, legend1 = spectrum(data=clone_data_long.query("Cohort=='Old'"), 
-                               mut_type=mut_type_names, ax=ax[1], fill=True)
-    
-    sns.despine(ax=ax[0])
-    sns.despine(ax=ax[1])
-
-    plot_B_ins, _ = spectrum(data=clone_data_long.query("Cohort=='Old'"), 
-                                   mut_type=mut_type_names, ax=ax1ins, legend=False,
-                                   fill=True, ymin=0, ymax=0.0005)    
-
-
-    ax[0].legend(handles=legend0, fontsize=22, ncol=4, bbox_to_anchor=[1.1, 1.2], frameon=False)
-    ax[1].legend(handles=legend1, fontsize=22, ncol=4, bbox_to_anchor=[1.2, 1.2], frameon=False)
-
-
-
-    ax[0].set_ylim(0, 0.0011)
-    ax[1].set_ylim(0, 0.0125)
+    final_clone_data = final_clone_data.query("Cohort in ['Young', 'Old'] & Tissue != 'B'")
     
 
-    ax1ins.set_xticklabels(mut_type_pretty, fontsize=17, rotation=45)
+    fig, axd, axdins = setup_figure()
 
-    ax1ins.set_xlabel("")
+    fc = color_cycle * 2
+    ec = color_cycle + ['black'] * 8
 
-    ax1ins.set_ylabel("Clone Frequency", fontsize=18)
-    ax1ins.tick_params(labelsize=16)
-    ax1ins.legend_.remove()
+    plot_clone_numbers(x="Tissue", y="Clone_Freq", hue="Cohort",
+                       data=final_clone_data, order=tissue_type_abbrev[: -1], 
+                       ylim=None, ax=axd['A'], xlabel='',
+                       ylabel="Clone Frequency($\mathregular{10^{-2}}$)",
+                       xticklabels=tissue_type_long, fc=fc, ec=ec)
+
+    plot_clone_numbers(x="Tissue", y="Percent_Clone", hue="Cohort",
+                       data=final_clone_data, order=tissue_type_abbrev[: -1], 
+                       ylim=[0, 14], ax=axd['B'], xlabel='', ylabel="Percent Clones",
+                       xticklabels=tissue_type_long, fc=fc, ec=ec)
+
+    sub_data = final_clone_data.query("Tissue in ['C', 'M', 'He']")
+
+    plot_clone_numbers(x="Tissue", y="Clone_Freq", hue="Cohort", data=sub_data,
+                       order=tissue_type_abbrev[-4: -1], ylim=None, ax=axdins,
+                       xlabel='', ylabel="", xticklabels=['', '', ''],
+                       fc=itemgetter(5, 6, 7, 13, 14, 15)(fc), ec=ec[5:11],
+                       legend=False)
+    
+    sns.despine(ax=axdins, top=False, right=False)
+    axdins.spines['left'].set_linewidth(1)
+    axdins.spines['bottom'].set_linewidth(1)
+    
+    sns.set_palette("tab10")
+    
+    subplot = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+
+    for i, tissue in enumerate(tissue_type[:-1]):
+        clone_plot(mut_data, tissue, "data/misc_items/NC_005089.1[1..16299].flat",
+                   axd[subplot[i]])
+
+        axd[subplot[i]].set_title(tissue_type_long[i], fontsize=20, y=1,
+                                  backgroundcolor='white')
 
     if not os.path.isdir("figures"):
         os.mkdir("figures/")
 
-    fig.savefig("figures/Figure_4A-B.png", facecolor='white', dpi=600, 
-                bbox_inches='tight')
-    fig.savefig("figures/Figure_4A-B.pdf", facecolor='white', dpi=600, 
-                bbox_inches='tight')
+    fig.savefig("figures/Figure_4.png", facecolor="white", dpi=600)
+    fig.savefig("figures/Figure_4.pdf", facecolor="white", dpi=600)

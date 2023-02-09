@@ -1,229 +1,338 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue Jul  5 08:28:07 2022
+Created on Fri Jul  1 09:18:01 2022
 
 @author: scottrk
 """
+import os
 import seaborn as sns
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as Patch
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from dna_features_viewer import BiopythonTranslator
-import numpy as np
-import pandas as pd
-from operator import itemgetter
-import os
-from GlobalVars_ import tissue_type, tissue_type_long, tissue_type_abbrev, color_cycle
-from compile_data import mut_file_import, calc_clone_numbers
+from GlobalVars_ import tissue_type, tissue_type_long, mut_type, \
+     mut_type_pretty, color_cycle, mut_type_conv, R_lib_path, tissue_type_abbrev
+from HelperFuncs_ import p_val_convert
+from compile_data import melt_summary, summary_import
+from compute_stats import heatmap_stats, Fig3C_stats
 
 
-class MyCustomTranslator(BiopythonTranslator):
+def spectrum(data, mut_type, ax, fill=False, ymin=None, ymax=None, legend=True):
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
+    sns.barplot(x='Class', y='Frequency', hue='Tissue', data=data,
+                       order=mut_type, ci='sd',
+                       edgecolor='black', lw=1.5, errwidth=1.5,
+                       capsize=0.04, errcolor='black', ax=ax)
 
-    def compute_feature_color(self, feature):
+    sns.stripplot(x="Class", y="Frequency", hue="Tissue", data=data,
+                  order=mut_type, ax=ax, alpha=0.7, dodge=True, color='black')
 
-        if feature.type == "gene":
-            return "purple"
-        elif feature.type == "tRNA":
-            return "blue"
-        elif feature.type == "rRNA":
-            return "orange"
-        else:
-            return "green"
-
-    def compute_feature_label(self, feature):
-
-        if feature.type is not None:
-            return None
-        # elif feature.type == "CDS":
-        #    return "CDS here"
-        else:
-            return BiopythonTranslator.compute_feature_label(self, feature)
-
-    def compute_filtered_features(self, features):
-        """Do not display promoters. Just because."""
-        return [
-            feature for feature in features
-            if feature.type is not None
-        ]
-
-
-def setup_figure():
-    mosaic = """AABB
-                CCDD
-                EEFF
-                GGHH
-                IIJJ"""
-
-    fig = plt.figure(figsize=(12, 14), constrained_layout=True, facecolor='white')
-    axd = fig.subplot_mosaic(mosaic)
-
-    fig.supylabel('Variant Allele Fraction (Log$_2$ Scaling)', y=0.35, size=20)
-    fig.supxlabel('Genome Position', size=20, x=0.55)
-    axdins = inset_axes(axd['A'],
-                        width="32.5%",
-                        height="100%",
-                        bbox_to_anchor=[-0.095, .5, 1.1, .5],
-                        bbox_transform=axd['A'].transAxes)
-
-    return fig, axd, axdins
-
-
-def plot_clone_numbers(x, y, hue, data, order, ax, ylim, xticklabels, xlabel, ylabel, fc, ec, legend=True):
-    sns.barplot(x=x, y=y, hue=hue, data=data, order=order, ci='sd',
-                       lw=1.2, errwidth=1.5, capsize=0.1, errcolor='black',
-                       ax=ax)
-    
     sns.despine(ax=ax)
     ax.spines['left'].set_linewidth(2)
     ax.spines['bottom'].set_linewidth(2)
-    ax.set_xticklabels(xticklabels, rotation=45, fontsize=14)
-    ax.tick_params('y', labelsize=14)
-    ax.set_xlabel(xlabel, fontsize=16)
-    plt.setp(ax.get_yaxis().get_offset_text(), visible=False)
-    ax.set_ylabel(ylabel, fontsize=16)
 
-    if ylim is not None:
-        ax.set_ylim(ylim[0], ylim[1])
+    if ymin is not None and ymax is not None:
+        ax.set_ylim(ymin, ymax)
     
-    for i, _ in enumerate(ax.patches):
-        ax.patches[i].set_facecolor(fc[i])
-        ax.patches[i].set_edgecolor('black')
-        
-        if i < len(ax.patches)/2:
+    patch_list = []
+    
+    if not fill:
+        for i, _ in enumerate(ax.patches):
+
+            j = i // 6
+            ax.patches[i].set_facecolor(color_cycle[j])
             r, g, b, a = ax.patches[i].get_facecolor()
-            ax.patches[i].set_facecolor((r, g, b, .15))  
-            ax.patches[i].set_edgecolor((r, g, b, 1))
+            ax.patches[i].set_facecolor((r, g, b, 0.15))  
+            ax.patches[i].set_edgecolor(color_cycle[j])
             ax.patches[i].set(lw=2.4)
-            
-    if legend:
-        new_legend = [Patch.Patch(facecolor='lightgrey', edgecolor='black', label='Young'),
-                      Patch.Patch(facecolor='dimgrey', edgecolor='black', label='Old')]
+
+            if i % 6 == 0:
+                patch_list.append([r, g, b, 0.15])
         
-        ax.legend(handles=new_legend, fontsize='xx-large', frameon=False, ncol=2, 
-                  bbox_to_anchor=[0.5, 0.73, 0.5, 0.5])
-        
-    elif not legend:
-        ax.legend_.remove()
+        if legend:
+            legend = [Patch.Patch(facecolor=patch_list[x], lw=2.4, edgecolor=color_cycle[x],
+                                  label=tissue_type_long[x]) for x in range(8)]
     else:
-        pass
 
+        for i, _ in enumerate(ax.patches):
 
-def clone_plot(df, tissue, flat_file, ax):
-    graphic_record = MyCustomTranslator().translate_record(flat_file)
-    graphic_record.feature_level_height = 0
-    graphic_record.plot(figure_width=1, ax=ax)
-    y = ax.twinx()
+            j = i // 6
+            ax.patches[i].set_facecolor(color_cycle[j])
+            ax.patches[i].set_edgecolor('black')
 
-    for index, group in enumerate(['Young', 'Old']):
-        data = df.query("Cohort==@group & Tissue==@tissue & \
-                        alt_count>2 & alt!='-' & ref!='-' & VAF<0.01")
+            if legend:
+                legend = [Patch.Patch(facecolor=color_cycle[x], edgecolor='black',
+                                      label=tissue_type_long[x]) for x in range(8)]
 
-        data['VAF'] = np.log2(data['VAF'].mul(10000).astype(float))
+    fig.canvas.draw()
+    plt.setp(ax.get_yaxis().get_offset_text(), visible=False)
+    order_of_mag = ax.get_yaxis().get_offset_text().get_text()[-2:]
+    string = "Mutation Frequency ($\mathregular{10^{" + str(order_of_mag) + "}}$)"
+    ax.set_xticklabels(mut_type_pretty)
+    ax.set_xlabel('')
+    ax.set_ylabel(string, fontsize=20)
+    ax.tick_params(labelsize=18)
+    ax.margins(x=.01)
+    ax.legend(handles=legend, ncol=4, fontsize=22, bbox_to_anchor=(0.04, 1.2),
+                             frameon=False)
 
-        if index == 0:
-            bottom = 0.67
-
-        if index == 1:
-            data['VAF'] = data['VAF'].mul(-1)
-            bottom = -0.67
-
-        markerline, stemlines, baseline = y.stem(data['start'], data['VAF'],
-                                                 linefmt='C' + str(index) + '-',
-                                                 markerfmt='C' + str(index) + 'o',
-                                                 basefmt=" ", label=group,
-                                                 bottom=bottom)
-        stemlines.set_linewidths(1)
-        markerline.set_markersize(3.4)
-
-    for x in [1, 2, 3, 4, 5, 6]:
-        y.axhline(y=-x, c='black', linestyle='--', alpha=0.11, zorder=0)
-        y.axhline(y=x, c='black', linestyle='--', alpha=0.11, zorder=0)
-
-    y.axhline(y=0, c='black')
-
-    y.tick_params(labelsize='x-large')
-    y.spines['bottom'].set_color('black')
-    y.set_yticks([-7, 0, 7])
-
-    if i % 2 == 1:
-        y.set_yticklabels([])
-
-    else:
-        y.set_yticklabels(['0.0128', '0', '0.0128'])
-
-    ax.set_yticks([1, 0, 1])
-    ax.set_ylim(-1, 1)
-    ax.set_xticklabels(['0', '2k', '4k', '6k', '8k', '10k', '12k', '14k', '16k'],
-                       fontsize=16, color='black')
-    y.spines["left"].set_position(("axes", 0))
-    y.yaxis.set_label_position('left')
-    y.yaxis.set_ticks_position('left')
-    y.legend(ncol=2, fontsize='large', loc='upper left')
 
     return ax
 
 
-if __name__ == "__main__":
+def mod_ratios(mratios_file):
+    ratio_df = pd.read_csv(mratios_file)
+    ratio_df["Estimate"] = np.log2(ratio_df["Estimate"])
+    ratio_df["confInt1"] = np.log2(ratio_df["confInt1"])
+    ratio_df["confInt2"] = np.log2(ratio_df["confInt2"])
+    ratio_df["Estimate"] = np.where(ratio_df['Class'] == "A>C/T>G", 0, ratio_df['Estimate'])
+    ratio_df["confInt1"] = np.where(ratio_df['Class'] == "A>C/T>G", 0, ratio_df['confInt1'])
+    ratio_df["confInt2"] = np.where(ratio_df['Class'] == "A>C/T>G", 0, ratio_df['confInt2'])
+    ratio_df["pVal"] = np.where(ratio_df['Class'] == "A>C/T>G", np.nan, ratio_df['pVal'])
+    ratio_df['pVal'] = np.where(ratio_df['pVal'] > 0.05, 0, ratio_df['pVal'])
+    ratio_df['pVal'] = np.where((ratio_df['pVal'] > 0) & (ratio_df['pVal'] < 0.0001), 4, ratio_df['pVal'])
+    ratio_df['pVal'] = np.where((0.0001 < ratio_df['pVal']) & (ratio_df['pVal'] < 0.001), 3, ratio_df['pVal'])
+    ratio_df['pVal'] = np.where((0.001 < ratio_df['pVal']) & (ratio_df['pVal'] < 0.01), 2, ratio_df['pVal'])
+    ratio_df['pVal'] = np.where((0.01 < ratio_df['pVal']) & (ratio_df['pVal'] < 0.05), 1, ratio_df['pVal'])
+    ratio_df['u_confInt_delta'] = ratio_df['confInt2'] - ratio_df['Estimate']
+    ratio_df['l_confInt_delta'] = ratio_df['Estimate'] - ratio_df['confInt1']
 
-    if not os.path.isfile("data/imported_data/summary_clone_data.csv"):
-        if not os.path.isdir("data/imported_data"):
-            os.mkdir("data/imported_data/")
+    return ratio_df
 
-        mut_data = mut_file_import()
-        final_clone_data = calc_clone_numbers(mut_data)
 
-        mut_data.to_csv("data/imported_data/mut_file_data.csv")
-        final_clone_data.to_csv("data/imported_data/summary_clone_data.csv")
+def mod_heatmap(data, labels, ax):
+    plot = sns.heatmap(data, square=True, cbar=False, cmap='rocket_r',
+                       linewidths=.5, linecolor='black', vmin=0,
+                       vmax=10, xticklabels=labels, yticklabels=labels, ax=ax)
+
+    sns.despine(left=True, bottom=True, ax=plot)
+    plot.set_facecolor('silver')
+    plot.tick_params(labelsize=18)
+
+    return plot
+
+
+def setup_figure():
+    mosaic = """AAAAAA
+                AAAAAA
+                BCDEFG"""
+
+    mosaic2 = """AAAAAA
+                 AAAAAA
+                 BCDEFG"""
+                 
+    mosaic3 = """AAAAAA
+                 AAAAAA
+                 AAAAAA
+                 AAAAAA
+                 BCDEFG
+                 .....G"""
+
+    fig = plt.figure(layout='tight', figsize=(14, 22))
+    top, middle, bottom = fig.subfigures(nrows=3, ncols=1)
+    axd = top.subplot_mosaic(mosaic, gridspec_kw={'wspace':0.016, 'hspace': 0.3})
+    axd2 = middle.subplot_mosaic(mosaic2, gridspec_kw={'wspace':0.016, 'hspace': 0.3})
+    axd3 = bottom.subplot_mosaic(mosaic3, gridspec_kw={'wspace':0.08, 'hspace': 0.3})
+    top.subplots_adjust(hspace=0.1)
+    axd2ins = inset_axes(axd2['A'], width="33.3%", height="40%",
+                         bbox_to_anchor=[-0.333, -0.3, 1, 1],
+                         bbox_transform=axd2['A'].transAxes)
+    axd3['A'].set_ylim(-1.5, 3)
+    axd3['A'].axhline(0, color='black')
+    axd3['A'].margins(x=0.01)
+    axd3['A'].set_xticklabels(mut_type_pretty, fontsize=18)
+    axd3['A'].set_yticks([-2, -1, 0, 1, 2, 3])
+    axd3['A'].set_yticklabels([-4, -2, 1, 2, 4, 8], fontsize=18)
+    
+    return fig, axd, axd2, axd3, axd2ins
+
+def Fig_3C(data, ax):
+    plot = sns.barplot(x='Class', y='Estimate', hue='Tissue', data=ratio_df,
+                palette='bright', order=mut_type, ci='sd', edgecolor='black',
+                lw=1.5, ax=ax)
+    plot.spines['left'].set_linewidth(2)
+
+    sort_dict2 = {'C>T/G>A': 0, 'A>G/T>C': 1, 'C>A/G>T': 2, 'C>G/G>C': 3, 'A>T/T>A': 4, 'A>C/T>G': 5}
+    resorted_df_list = []
+    
+    for tissue in tissue_type_abbrev[:-1]:
+        resorted_df = data.query("Tissue==@tissue").sort_values(by=['Class'],
+                                                                    key=lambda x: x.map(sort_dict2))
+        resorted_df_list.append(resorted_df)
+    
+    resorted_df = pd.concat(resorted_df_list)
+    x_coords = []
+    
+    for i, patch in enumerate(ax.patches):
+        j = i // 6
+        patch.set_facecolor(color_cycle[j])
+        patch.set_edgecolor('black')
+        x_coords.append(patch.get_x() + 0.5 * patch.get_width())
+    legend = [Patch.Patch(facecolor=color_cycle[x], edgecolor='black',
+                          label=tissue_type_long[x]) for x in range(8)]
+
+    
+    upper = list(resorted_df['u_confInt_delta'])
+    lower = list(resorted_df['l_confInt_delta'])
+    
+    plot.errorbar(x=x_coords, y=resorted_df['Estimate'], yerr=lower,
+                      fmt="none", c="black", capsize=4)
+    
+    plot.legend(handles=legend, ncol=4, fontsize=22, bbox_to_anchor=(.03, 1),
+                    frameon=False)
+    
+    plot.set_ylabel("Fold Change w/Age ($log_2$ Scaled)", fontsize=18)
+    plot.tick_params(labelsize=18)
+    plot.set_xticklabels(mut_type_pretty)
+    plot.set_xlabel("")
+
+    return plot
+
+def Fig_3C_heatmap(data, mut_class, ax):
+
+    plot = sns.heatmap(pd.DataFrame(data.query('Class==@mut_class')['pVal']).T,
+                ax=ax, square=True, vmin=0, vmax=10,
+                cbar=False, cmap='rocket_r', linewidths=0.5,
+                linecolor='black')
+
+    sns.despine(top=False, right=False, ax=axd[subplot[i]])
+
+    plot.set_xticklabels(('K', '\nL', 'RC', '\nR', 'Hi', '\nC', 'M', '\nHe'), fontsize=16)
+    plot.set_yticklabels('')
+        
+    return plot
+
+if __name__ == '__main__':
+
+    custom_dict = {'K': 0, 'L': 1, 'RC': 3, 'R': 4, 'Hi': 5, 'C': 6, 'M': 7, 'He': 8}
+
+    if not os.path.isfile("data/imported_data/summary_data_tidy.csv"):
+        if not os.path.isdir("data/imported_data/"):
+            os.mkdir("data/imported_data")
+
+        data = melt_summary(summary_import("data/Mouse_aging_mtDNA_summary.csv"))
+        data.to_csv("data/imported_data/summary_data_tidy.csv")
     else:
-        mut_data = pd.read_csv("data/imported_data/mut_file_data.csv",
-                               index_col=[0])
-        final_clone_data = pd.read_csv("data/imported_data/summary_clone_data.csv")
+        data = pd.read_csv("data/imported_data/summary_data_tidy.csv", index_col=0)
+        data = data.query("Treatment=='NT'").sort_values(by=['Tissue'],
+                                                         key=lambda x: x.map(custom_dict))
 
-    final_clone_data = final_clone_data.query("Cohort in ['Young', 'Old'] & Tissue != 'B'")
+    if not os.path.isfile("data/stats/Figure_3_ratio_statistics.csv"):
+
+        if not os.path.isdir("data/stats/"):
+            os.mkdir("data/stats/")
+        else:
+            Fig3C_stats(R_lib_path)
+            ratio_df = mod_ratios("data/stats/Figure_3_ratio_statistics.csv")
+    else:
+        ratio_df = mod_ratios("data/stats/Figure_3_ratio_statistics.csv")
+
+    sort_dict = {'K': 0, 'L': 1, 'RC': 3, 'R': 4, 'Hi': 5, 'C': 6, 'M': 7, 'He': 8}
+    ratio_df.sort_values(by=['Tissue'], key=lambda x: x.map(sort_dict),
+                         inplace=True)
+
+    fig, axd, axd2, axd3, axd2ins = setup_figure()
+
+    spectrum1 = spectrum(data.query("Age=='Young'"), mut_type, axd['A'], 
+                         ymin=0, ymax=5e-6)
+
+    spectrum2 = spectrum(data.query("Age=='Old'"), mut_type, axd2['A'], 
+                         fill=True, ymin=0, ymax=1.55e-5)
+    
+    sns.barplot(x='Class', y='Frequency', hue='Tissue',
+                data=data.query("Age=='Old' & Class in ['C>A/G>T', 'C>G/G>C']"),
+                order=mut_type[2:4], ci='sd', edgecolor='black', lw=1.5,
+                errwidth=1.5, capsize=0.04, errcolor='black', ax=axd2ins)
+
+    spectrum_change = Fig_3C(ratio_df, axd3['A'])
+    
+    fig.canvas.draw()
+    plt.setp(axd2ins.get_yaxis().get_offset_text(), visible=False)
+    order_of_mag = axd2ins.get_yaxis().get_offset_text().get_text()[-2:]
+    string = "Mutation Freq. ($\mathregular{10^{" + str(order_of_mag) + "}}$)"
+    axd2ins.set_ylabel(string, fontsize=15)
+    axd2ins.set_xticklabels(mut_type_pretty[2:4], fontsize=15)
+    axd2ins.tick_params('y', labelsize=15)
+    axd2ins.legend_.remove()
+    axd2ins.set_xlabel('')
+    
+    for i, ax in enumerate(axd2ins.patches):
+        j = i // 2
+        axd2ins.patches[i].set_facecolor(color_cycle[j])
+        axd2ins.patches[i].set_edgecolor('black')
     
 
-    fig, axd, axdins = setup_figure()
+    subplot = ['B', 'C', 'D', 'E', 'F', 'G']
 
-    fc = color_cycle * 2
-    ec = color_cycle + ['black'] * 8
+    for i, mut_class in enumerate(mut_type):
 
-    plot_clone_numbers(x="Tissue", y="Clone_Freq", hue="Cohort",
-                       data=final_clone_data, order=tissue_type_abbrev[: -1], 
-                       ylim=None, ax=axd['A'], xlabel='',
-                       ylabel="Clone Frequency($\mathregular{10^{-2}}$)",
-                       xticklabels=tissue_type_long, fc=fc, ec=ec)
+        age = 'Young'
 
-    plot_clone_numbers(x="Tissue", y="Percent_Clone", hue="Cohort",
-                       data=final_clone_data, order=tissue_type_abbrev[: -1], 
-                       ylim=[0, 14], ax=axd['B'], xlabel='', ylabel="Percent Clones",
-                       xticklabels=tissue_type_long, fc=fc, ec=ec)
+        if not os.path.isfile("data/stats/Figure_3_" + age + "_" + mut_type_conv[mut_class] + "_stats.csv"):
+            if not os.path.isdir("data/stats/"):
+                os.mkdir("data/stats/")
 
-    sub_data = final_clone_data.query("Tissue in ['C', 'M', 'He']")
+            young_tissue_comp = heatmap_stats(data, age, mut_class,
+                                              "data/stats/Figure_3_" + age + "_" + mut_type_conv[
+                                                  mut_class] + "_stats.csv")
+        else:
+            young_tissue_comp = pd.read_csv(
+                "data/stats/Figure_3_" + age + "_" + mut_type_conv[mut_class] + "_stats.csv",
+                index_col=0)
 
-    plot_clone_numbers(x="Tissue", y="Clone_Freq", hue="Cohort", data=sub_data,
-                       order=tissue_type_abbrev[-4: -1], ylim=None, ax=axdins,
-                       xlabel='', ylabel="", xticklabels=['', '', ''],
-                       fc=itemgetter(5, 6, 7, 13, 14, 15)(fc), ec=ec[5:11],
-                       legend=False)
+        age = 'Old'
+
+        if not os.path.isfile("data/stats/Figure_3_" + age + "_" + mut_type_conv[mut_class] + "_stats.csv"):
+            if not os.path.isdir("data/stats/"):
+                os.mkdir("data/stats/", mode=0o666)
+
+            old_tissue_comp = heatmap_stats(data, age, mut_class,
+                                            "data/stats/Figure_3_" + age + "_" + mut_type_conv[
+                                                mut_class] + "_stats.csv")
+        else:
+            old_tissue_comp = pd.read_csv("data/stats/Figure_3_" + age + "_" + mut_type_conv[mut_class] + "_stats.csv",
+                                          index_col=0)
+
+        heatmap = mod_heatmap(p_val_convert(young_tissue_comp), tissue_type_abbrev[: -1],
+                              axd[subplot[i]])
+
+        heatmap2 = mod_heatmap(p_val_convert(old_tissue_comp), tissue_type_abbrev[: -1],
+                               axd2[subplot[i]])
+
+        heatmap3 = Fig_3C_heatmap(ratio_df, mut_class, axd3[subplot[i]])
+        
+        if subplot[i] != 'B':
+            heatmap.set_yticklabels('')
+            heatmap2.set_yticklabels('')
+            heatmap.tick_params(labelrotation=0, labelsize=16)
+            heatmap.set_xticklabels(('K', '\nL', 'RC', '\nR', 'Hi', '\nC', 'M', '\nHe'))
+            heatmap2.tick_params(labelrotation=0, labelsize=16)
+            heatmap2.set_xticklabels(('K', '\nL', 'RC', '\nR', 'Hi', '\nC', 'M', '\nHe'))
+        
+        else:
+            heatmap.tick_params(labelrotation=0, labelsize=16)
+            heatmap.set_xticklabels(('K', '\nL', 'RC', '\nR', 'Hi', '\nC', 'M', '\nHe'))
+            heatmap2.tick_params(labelrotation=0, labelsize=16)
+            heatmap2.set_xticklabels(('K', '\nL', 'RC', '\nR', 'Hi', '\nC', 'M', '\nHe'))
+
+    sns.heatmap(pd.DataFrame([4, 3, 2, 1, 0]), square=True, cbar=False,
+                cmap='rocket_r', vmin=0, vmax=10,
+                yticklabels=['$p_{adj}<0.0001$', '$0.0001<p_{adj}<0.001$', '$0.001<p_{adj}<0.01$', '$0.01<p_{adj}<0.05$', 'NS'],
+                xticklabels=[], linewidths=0.5,
+                linecolor='black', ax=axd3["G"])
     
-    sns.despine(ax=axdins, top=False, right=False)
-    axdins.spines['left'].set_linewidth(1)
-    axdins.spines['bottom'].set_linewidth(1)
-    
-    sns.set_palette("tab10")
-    
-    subplot = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J']
+    axd3['G'].tick_params(labelsize="large", labelleft=False, labelright=True,
+                         left=False, right=True, labelrotation=0)
+    axd3['B'].set_yticklabels(["p-value"], rotation=0, fontsize=14)
+    axd3['A'].text(x=4.9, y=0.1, s="ND", fontsize=25)
+    pos = axd3['G'].get_position()
+    pos.y0 = 0.08
+    axd3['G'].set_position(pos)
 
-    for i, tissue in enumerate(tissue_type[:-1]):
-        clone_plot(mut_data, tissue, "data/misc_items/NC_005089.1[1..16299].flat",
-                   axd[subplot[i]])
+    if not os.path.isdir("figures/"):
+        os.mkdir("figures")
 
-        axd[subplot[i]].set_title(tissue_type_long[i], fontsize=20, y=1,
-                                  backgroundcolor='white')
-
-    if not os.path.isdir("figures"):
-        os.mkdir("figures/")
-
-    fig.savefig("figures/Figure_3.png", facecolor="white", dpi=600)
-    fig.savefig("figures/Figure_3.pdf", facecolor="white", dpi=600)
+    fig.savefig('figures/Figure_3.png', dpi=600, facecolor='white')
+    fig.savefig('figures/Figure_3.pdf', dpi=600, facecolor='white')
