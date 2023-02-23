@@ -28,6 +28,7 @@ def import_data():
     data = data.query("Treatment!='perf'& Age=='Old' \
                       & Class not in ['Total_SNV_Freq', 'Total_InDel_Freq']")
 
+    data = data.replace({'SS31':'Elam.'})
     return data
 
 
@@ -52,7 +53,7 @@ if __name__ == '__main__':
     fig, ax = setup_figure()
     subplot_id = {0: 'A', 1: 'B', 2: 'C', 3: 'D'}
     intervention_color = color_cycle[2:6]
-
+    label_list = ['Old', 'Old+Elam', 'Old+NMN']
     for i, tissue in enumerate(tissue_type_abbrev[2:6]):
 
         j = subplot_id[i]
@@ -72,7 +73,8 @@ if __name__ == '__main__':
         ax[j].set_xticklabels(mut_type_pretty, rotation=45)
         ax[j].tick_params(labelsize=14)
         ax[j].set_title(tissue_type_long[2:6][i], fontsize=16, y=0.85)
-
+        
+        
         hatches = ['///', '--']
         for x, bar in enumerate(ax[j].patches):
             plot.patches[x].set_facecolor(intervention_color[i])
@@ -80,8 +82,9 @@ if __name__ == '__main__':
                 bar.set_hatch(hatches[0])
             elif x in range(12, 18):
                 bar.set_hatch(hatches[1])
-        plot.legend(markerscale=5, fontsize=16)
-
+        
+        ax[j].legend(markerscale=5, fontsize=16, loc='best')
+    
     if not os.path.isdir('figures/'):
         os.mkdir('figures/')
 

@@ -23,6 +23,7 @@ else:
     data = pd.read_csv("data/imported_data/summary_data_tidy.csv", index_col=0)
 
 data = data.query("Treatment!='perf' & Age=='Old' & Class=='Total_SNV_Freq'")
+data = data.replace({'NT':'Old', 'SS31':'Elam'})
 
 fig, ax = plt.subplots(ncols=1, figsize=(12, 7))
 
@@ -42,13 +43,13 @@ for x, bar in enumerate(ax.patches):
     elif x in range(16, 24):
         bar.set_hatch(hatches[1])
 
-patch1 = Patch.Patch(facecolor='silver', edgecolor='white', label='Old')
+patch1 = Patch.Patch(facecolor='silver', edgecolor='white', label='NT')
 
 patch2 = Patch.Patch(facecolor='silver', edgecolor='white', hatch=hatches[0],
-                     label='Old+Elam.')
+                     label='Elam.')
 
 patch3 = Patch.Patch(facecolor='silver', edgecolor='white', hatch=hatches[1],
-                     label='Old+NMN')
+                     label='NMN')
 
 legend = [patch1, patch2, patch3]
 

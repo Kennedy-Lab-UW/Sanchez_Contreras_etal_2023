@@ -27,6 +27,7 @@ def import_data():
     
     data = data.query("Treatment!='perf'& Age=='Old' & Tissue in ['K', 'M', 'He', 'L'] & \
                        Class not in ['Total_SNV_Freq', 'Total_InDel_Freq']")
+    data = data.replace({'SS31':'Elam.'})
     
     return data
 

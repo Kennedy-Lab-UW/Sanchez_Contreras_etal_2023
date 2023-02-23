@@ -1,4 +1,4 @@
-# Reproducible analysis for Sanchez-Contreras <i>et al</i>., 2022
+# Reproducible analysis for Sanchez-Contreras M and Sweetwyne MT, <i>et al</i>., Elife, 12:e83395, 2023. https://doi.org/10.7554/eLife.83395
 
 Repository contains the necessary data and python scripts to generate nearly all of the figures and reported p-values. Reproducibility is done using Snakemake
 
